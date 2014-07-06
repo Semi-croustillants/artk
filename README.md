@@ -3,9 +3,17 @@ artk
 
 ARTK is a real-time priority-driven multitasking kernel for the Arduino released under GPL.
 
+* You can read about ARTK in the following article (please cite this if you publish work that makes use of ARTK): 
+ 
+  P. H. Schimpf, “ARTK, a Compact Real-Time Kernel for Arduino,” International Journal of Embedded Systems (IJES), Vol. 5, No. 1, pp. 106-113, 2013.
+  (http://www.inderscience.com/info/inarticle.php?artid=52176)
+
+* More information can be found here:
+  (https://sites.google.com/site/pschimpf99/home/artk)
 
 Jun 2012  Paul Schimpf
 Feb 2013  Added citation for Embedded Systems article
+Jul 2014  Minor tweaks by Craig Trader for portability.
 
 To install ARTK
 ===============
@@ -79,3 +87,5 @@ you find it useful feel free (or not, it is entirely up to you) to send a PayPal
 contribution to: 
 
 pay.pschimpf@gmail.com 
+
+
