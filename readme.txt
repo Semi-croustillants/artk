@@ -1,21 +1,15 @@
-artk
-====
-
-ARTK is a real-time priority-driven multitasking kernel for the Arduino released under GPL.
-
-
 Jun 2012  Paul Schimpf
 Feb 2013  Added citation for Embedded Systems article
 
-To install ARTK
-===============
-
+-----------------
+To install ARTK:
+-----------------
 Create a directory called ARTK under your Arduino library directory.
 Extract the contents of ARTK.zip into that directory.
 
-To test ARTK
-============
-
+-----------------
+To test ARTK:
+-----------------
 Create a directory somewhere called ARTKtestMega or ARTKtestUno (depending on
 whether you have an Arduino with more or less than a 64kbyte memory space).
 
@@ -32,9 +26,9 @@ You may need to press the Arduino reset button.
 Compare the Monitor output to the contents of the file outputMega.txt 
 or outputUno.txt
 
+-----------------
 What next?
-==========
-
+-----------------
 Read all the comments and code in the test file carefully and make sure you
 understand why the output looks the way it does.
 
@@ -69,9 +63,9 @@ philosopher pick up the forks in the opposite order of the other philosophers).
 Try using ARTK tasks in your next Arduino embedded systems project,
 but only if concurrent execution makes sense for it.
 
+-----------------
 It's Free
-=========
-
+-----------------
 ARTK is open source, in keeping with the spirit of Arduino. Please respect the 
 GPL license terms, which you can find in the file gpl.txt. ARTK is also free.
 I developed this on my own time and received no compensation for doing so. If 

@@ -1,0 +1,26 @@
+ARTK release 0.2
+Paul Schimpf, 2012, GNU GPL
+3 tasks, stack=464
+Start Tasking
+consumer wait, stack=251
+signaling, stack=253
+rcvd 1st
+timed wait for 2nd
+sleep 20
+recurser, stack=253
+doSomething, stack=233
+timed out
+doSomething, stack=235
+doSomething, stack=237
+doSomething, stack=239
+doSomething, stack=241
+doSomething, stack=243
+doSomething, stack=245
+triggering
+rcvd 2nd, int = 64 usec ago
+producer exit
+doSomething, stack=247
+doSomething, stack=249
+doSomething, stack=251
+recurser exit
+All tasks done, exiting
