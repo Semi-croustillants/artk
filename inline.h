@@ -32,9 +32,9 @@
 
 #include <Arduino.h>
 
-extern unsigned char *glastSP ;
+//extern unsigned char *glastSP ;
 
-inline 
+/*inline
 void ARTK_WaitSema(Semaphore *semaphore)
 {
 	semaphore->wait() ;
@@ -51,7 +51,7 @@ void ARTK_SignalSema(Semaphore *semaphore)
 {
 	//Printf("space=%d\n", ARTK_StackLeft()) ;
 	semaphore->signal() ;
-}
+}*/
 
 inline 
 void ARTK_Sleep(unsigned int ticks)
@@ -59,11 +59,11 @@ void ARTK_Sleep(unsigned int ticks)
 	Scheduler::InstancePtr->activeTask->task_sleep(ticks) ;
 }
 
-inline 
+/*inline
 Task *ARTK_MyId()
 {
     return Scheduler::InstancePtr->activeTask ;
-}
+}*/
 
 inline 
 void ARTK_Yield()
@@ -71,7 +71,7 @@ void ARTK_Yield()
    Scheduler::InstancePtr->relinquish() ;
 }
 
-inline 
+/*inline
 int ARTK_StackLeft()
 {
    // return (Scheduler::InstancePtr->stackLeft()) ;
@@ -88,7 +88,7 @@ int ARTK_EstAvailRam()
    if (glastSP==0)
       return ( (SP) - ((unsigned int)__brkval) ) ;
    return (glastSP - ((unsigned char *)__brkval)) ;
-}
+}*/
 
 #endif
 

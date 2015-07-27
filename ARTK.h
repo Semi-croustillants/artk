@@ -45,11 +45,11 @@
 // This library won't work on with task stacks less than about 210,
 // so the library won't let you set a stack size less than that
 // This is the default size - only a bit larger than the min
-#define DEFAULT_STACK 256 
+#define DEFAULT_STACK 256
 
-class Semaphore ;
+//class Semaphore ;
 class Task ;
-typedef Semaphore* SEMAPHORE ;
+//typedef Semaphore* SEMAPHORE ;
 typedef Task* TASK ;
 
 // utility to printf to serial port
@@ -69,7 +69,7 @@ void ARTK_SetOptions(int iLargeModel, int iTimerUsec) ;
 // if it gets below about 203, things will probably break as the preemptive
 // kernel needs about that much space on any task to get business done
 // inline 
-int ARTK_StackLeft() ;
+//int ARTK_StackLeft() ;
 
 // this is a conservative estimate - it does not traverse the heap freelist, so 
 // it includes 16 bytes times the max number of simultaneous sleeps that have 
@@ -78,14 +78,14 @@ int ARTK_StackLeft() ;
 // freelist, but it is best to assume you will build to that number of sleepers
 // again at some point
 //inline 
-int ARTK_EstAvailRam() ;
+//int ARTK_EstAvailRam() ;
 
 // All code enclosed by the following Critical Section macro are protected by 
 // a single a global mutex.  Useful, for example, to prevent a waking Task of 
 // higher priority from interspersing output on a shared resource (like the
 // Serial link) with a lower-priority task that it preempts.
-extern SEMAPHORE ARTK_mutex ;
-#define CS(x) {ARTK_WaitSema(ARTK_mutex); x ARTK_SignalSema(ARTK_mutex);}
+/*extern SEMAPHORE ARTK_mutex ;
+#define CS(x) {ARTK_WaitSema(ARTK_mutex); x ARTK_SignalSema(ARTK_mutex);}*/
 
 // Task functions
 // Valid user task priority is 1 to 16 (1 being lowest)
@@ -95,8 +95,7 @@ extern SEMAPHORE ARTK_mutex ;
 // (or allowing an ISR to signal a semaphore), or waiting on a semaphore, 
 // or sleeping.  Of course, once a higher priority task starts up, it can 
 // take the processor anytime it is ready to do so.
-TASK ARTK_CreateTask(void (*root_fn_ptr)(), uint8_t priority = 1, 
-     unsigned stacksize = DEFAULT_STACK) ;
+TASK ARTK_CreateTask(void (*root_fn_ptr)(), unsigned stacksize = DEFAULT_STACK) ;
 
 // Sleep for so many ticks.  See ARTK_SetOptions above for the tick interval.
 // inlined 
@@ -120,13 +119,13 @@ TASK ARTK_MyId() ;
 // Semaphore functions - for the last the timeout is in ticks
 // The version with timeout returns -1 if it timed out, 0 if the semaphore
 // was acquired
-SEMAPHORE ARTK_CreateSema(int initial_count = 0) ;
+/*SEMAPHORE ARTK_CreateSema(int initial_count = 0) ;
 // inlined 
 void ARTK_WaitSema(SEMAPHORE semaphore) ;
 // inlined 
 void ARTK_SignalSema(SEMAPHORE semaphore) ;
 // inlined 
-int  ARTK_WaitSema(SEMAPHORE semaphore, unsigned timeout) ;
+int  ARTK_WaitSema(SEMAPHORE semaphore, unsigned timeout) ;*/
 
 // ARTK will terminate when all tasks return (including Main), or you can 
 // terminate early by calling this

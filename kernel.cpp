@@ -48,12 +48,14 @@
 
 // -----------------------------------------------------------------
 // globals
-const char *release = "0.3" ;
-const int year = 2012 ;
+const char *release = "0.3_custom" ;
+const int year = 2014 ;
 int glargeModel = FALSE ;
 int gtimerUsec = TIMER_USEC ;
 unsigned char *glastSP = 0 ;
 Scheduler *Scheduler::InstancePtr = 0 ;
+DQNodeManager *DQNodeManager::instPtr = 0;
+TaskManager *TaskManager::instPtr = 0;
 
 //----------------------------------------------------------------
 // Doubly-linked list manipulation
@@ -97,28 +99,50 @@ void DNode::remove()
 // The counts remaining for a particular entry is the sum off all dcounts
 // up to and including that entry
 
-struct DQNode
-{
-	Task *pTask ;
-	DQNode *pNext ;
-	unsigned int dcount ;
-} ;
+void DQNodeManager::Instance() {
+	if (instPtr == NULL) {
+		instPtr = new DQNodeManager;
+	}
+}
+
+DQNode *DQNodeManager::getFreeDQNode() {
+	unsigned char i;
+	for (i = 0; i < MAX_THREAD_LIST; i++) {
+		if (!DQList[i].inUse) {
+			DQList[i].inUse = !DQList[i].inUse;
+			return &DQList[i];
+		}
+	}
+	return NULL;
+}
+
+void DQNodeManager::releaseDQNode(DQNode *addr) {
+	unsigned char i;
+	for (i = 0; i < MAX_THREAD_LIST; i++) {
+		if (&DQList[i] == addr) {
+			DQList[i].inUse = FALSE;
+			DQList[i].pNext = 0;
+			DQList[i].pTask = 0;
+			DQList[i].dcount = 0;
+		}
+	}
+}
 
 DQNode *pSleepHead = NULL ;
 
 // add a task to sleep q in sorted position
 void addSleeper(Task *pTask, unsigned int count)
 {
-   DQNode *pNew ;
-   DQNode *pCurrent ;
-   DQNode *pOneBack ;
 
-   pNew = new DQNode ;
+   DQNode *pNew = DQNodeManager::instPtr->getFreeDQNode();
+   DQNode *pCurrent = NULL ;
+   DQNode *pOneBack = NULL ;
+
    pNew->pTask = pTask ;
    pNew->pNext = NULL ;
    pNew->dcount = count ;
 
-   if (pSleepHead == NULL) 
+   if (pSleepHead == NULL)
    {
       pSleepHead = pNew ;
    } 
@@ -129,7 +153,7 @@ void addSleeper(Task *pTask, unsigned int count)
       // the count of all items that remain in front of it
       pCurrent = pSleepHead ;
       pOneBack = NULL ;
-      while ( (pCurrent != NULL) && (pCurrent->dcount < pNew->dcount) ) 
+      while ( (pCurrent != NULL) && (pCurrent->dcount < pNew->dcount) )
       {
 	     pNew->dcount -= pCurrent->dcount ;
          pOneBack = pCurrent ;
@@ -172,7 +196,7 @@ Task *removeWaker()
       pTemp = pSleepHead ;
       pSleepHead = pTemp->pNext ;
 	  pTask = pTemp->pTask ;
-      delete pTemp ;
+	  DQNodeManager::instPtr->releaseDQNode(pTemp);
    }
    return pTask ;
 }
@@ -180,7 +204,7 @@ Task *removeWaker()
 // Decrements the counter of the first node in the sleep queue
 void sleepDecrement()
 {
-   if (pSleepHead != NULL) 
+   if (pSleepHead != NULL)
       pSleepHead->dcount-- ;
 }
 
@@ -212,8 +236,7 @@ void removeSleeper(Task *pTask)
          pNext = pCurrent->pNext ;
          if (pNext != NULL) 
             pNext->dcount += pCurrent->dcount ;
-
-         delete pCurrent ;
+         DQNodeManager::instPtr->releaseDQNode(pCurrent);
       } 
       else 
       {
@@ -268,16 +291,15 @@ void Scheduler::resched()
 {
 	Task   *oldTask ;
 	Task   *newTask ;
-	int    priority ;
 
     // remove highest priority task from readyList
-	for (priority=HIGHEST_PRIORITY; priority >= LOWEST_PRIORITY; priority--) 
+	if (!readyList.isEmpty())
     {
-		if (!readyList[priority].isEmpty()) 
-        {
-			newTask = (Task *)readyList[priority].removeFront() ;
-			break ;
-		}
+		newTask = (Task *)readyList.removeFront() ;
+	}
+	else {
+		this->relinquish();
+		//newTask = (Task *)readyList[LOWEST_PRIORITY].removeFront() ;
 	}
 
 	// If calling task is still the highest priority just return
@@ -312,10 +334,13 @@ void Scheduler::resched()
 	// state of main() is abandoned on the first task switch)
 	int firstRun = activeTask->firstRun ;
 	activeTask->firstRun = FALSE ;
-	if (oldTask != NULL)
-	   ContextSwitch(&oldTask->pStack, activeTask->pStack, firstRun) ;
-    else
+	if (oldTask != NULL) {
+		ContextSwitch(&oldTask->pStack, activeTask->pStack, firstRun) ;
+	}
+
+    else {
  	   FirstSwitch(activeTask->pStack) ;
+    }
 }
 
 //  Called by a task when it is ready to yield
@@ -341,17 +366,12 @@ void Scheduler::startMultiTasking()
 }
 
 // Constructor for class Task
-Task::Task(void (*rootFnPtr)(), uint8_t taskPriority, unsigned stackSize) : mylink()
+/*Task::Task(void (*rootFnPtr)(), uint8_t taskPriority, unsigned stackSize) : mylink()
 {
    rootFn = rootFnPtr ;
-   // because the new operator for arrays is broken in AVR
-   stack = (unsigned char *)malloc(stackSize) ;
-   if (stack==NULL)
-   {
-      Printf("Insufficient Mem to Create Task\n") ;
-      return ;
-   }
    
+   inUse = FALSE;
+
    //Printf("stack at %d\n", stack) ;
     
    //stack = (unsigned char *) new char[stackSize] ;
@@ -391,6 +411,22 @@ Task::Task(void (*rootFnPtr)(), uint8_t taskPriority, unsigned stackSize) : myli
    //while (temp>=pStack) Printf("%hhx ", *temp--) ;
    //Printf("\n") ;
    ****/
+//}
+
+Task::Task() {
+
+	   firstRun = TRUE ;
+
+	   inUse = FALSE;
+
+	   pStack = &stack[MIN_STACK-1] ;
+	   // Initialize the stack so that the root function
+	   // for this task returns to taskDone().
+	   //*pStack-- = (unsigned char)((long)Task::taskDone & 0x00ff) ;
+	   //*pStack-- = (unsigned char)(((long)Task::taskDone >> 8) & 0x00ff) ;
+	   //if (glargeModel)
+	   //   *pStack-- = (unsigned char)(((long)Task::taskDone >> 16) & 0x00ff) ;
+	   //priority = 1;
 }
 
 //  When the root function for a task returns, it executes
@@ -414,10 +450,46 @@ void Task::task_sleep(unsigned int cnt)
 	}
 }
 
+void Task::PushScheduler() {
+	// next put the entry function on the stack so we return to it after
+	// returning from a context switch
+	*pStack-- = (unsigned char)((long)rootFn & 0x00ff) ;
+	*pStack-- = (unsigned char)(((long)rootFn >> 8) & 0x00ff) ;
+	if (glargeModel)
+	   *pStack-- = (unsigned char)(((long)rootFn >> 16) & 0x00ff) ;
+	Scheduler::InstancePtr->addNewTask(this) ;
+}
+
+void TaskManager::Instance() {
+	if (instPtr == NULL) {
+		instPtr = new TaskManager;
+	}
+}
+
+Task* TaskManager::getFreeTask() {
+	unsigned char i;
+	for (i = 0; i < MAX_THREAD_LIST; i++) {
+		if (!listTask[i].inUse) {
+			listTask[i].inUse = !listTask[i].inUse;
+			return &listTask[i];
+		}
+	}
+	return NULL;
+}
+
+void TaskManager::releaseTask(Task *addr) {
+	unsigned char i;
+	for (i = 0; i < MAX_THREAD_LIST; i++) {
+		if (&listTask[i] == addr) {
+			listTask[i].inUse = FALSE;
+		}
+	}
+}
+
 void timerISR()
 {
 	Task *pWakeup ;
-	int contextSwitchNeeded = FALSE ;
+	//int contextSwitchNeeded = FALSE ;
 
     // interrupts will be disabled on the way in
     
@@ -434,34 +506,34 @@ void timerISR()
     {
 		// A task that blocked on a semaphore has timed out 
         // Remove it from the semaphore list and flag the semaphore timeout
-		if (pWakeup->myState() == SEM_TIMED_BLOCKED) 
+		/*if (pWakeup->myState() == SEM_TIMED_BLOCKED)
 		{
 		    pWakeup->timedOut = TRUE ;
 			pWakeup->mylink.remove() ;
-        }
+        }*/
         
         // either way (semaphore or just sleeping), it goes to ready list
         pWakeup->makeTaskReady() ;
 		Scheduler::InstancePtr->addready(pWakeup) ;
-		if (pWakeup->priority > active->priority)
-			contextSwitchNeeded = TRUE ;
+		/*if (pWakeup->priority > active->priority)
+			contextSwitchNeeded = TRUE ;*/
 
         // see if anymore are at 0
 		pWakeup = removeWaker() ;
 	}
-	if (contextSwitchNeeded) 
+	/*if (contextSwitchNeeded)
     {
 		active->makeTaskReady() ;
 		Scheduler::InstancePtr->addready(active) ;
 		Scheduler::InstancePtr->resched() ;
-	}
+	}*/
 	
 	// interrupts will be reenabled on the way out
 }
 
 //--------------------------------------------------------------------------
 //  Semaphore Class
-Semaphore::Semaphore(int initialCount) : taskList()
+/*Semaphore::Semaphore(int initialCount) : taskList()
 {
    count = initialCount ;
 }
@@ -563,68 +635,70 @@ void Semaphore::signal()
 		}
 	}
 	sei() ;     // can allow an ISR in now
-}
+}*/
 
 //--------------------------------------------------------------------------
 // User-accessible constructs
 
-Semaphore *ARTK_mutex ;   // used by the CS macro
+//Semaphore *ARTK_mutex ;   // used by the CS macro
 
 // extern void Idle() ;
 void Idle()
 {
-   while (1) ;
+   while (1) {
+	   ARTK_Yield();
+   }
 }
 
-Task *ARTK_CreateTask(void (*rootFnPtr)(), uint8_t priority, unsigned stacksize)
+Task *ARTK_CreateTask(void (*rootFnPtr)(), unsigned stacksize)
 {
-   Task *t ;
-   if (priority<1) priority = 1 ;
-   if (priority>=PRIORITY_LEVELS) priority = PRIORITY_LEVELS-1 ;
-   if (rootFnPtr==Idle) priority = 0 ;
-   if (stacksize<MIN_STACK) stacksize = MIN_STACK ;
-   t = new Task(rootFnPtr, priority, stacksize) ;
-   return t ;
+
+   Task *task = TaskManager::instPtr->getFreeTask();
+   //Printf("Get %d task\n", task);
+   if (rootFnPtr==Idle) {
+	   task->setFunction(rootFnPtr);
+	   //task->setPriority(0);
+	   task->PushScheduler();
+   }
+   else {
+	   task->setFunction(rootFnPtr);
+	   task->PushScheduler();
+   }
+   return task ;
 }
 
 void ARTK_TerminateMultitasking()
 {
-   Printf("All tasks done, exiting\n") ; 
+   //Printf("All tasks done, exiting\n") ;
    // stop timer isr
    Timer1.detachInterrupt() ;
    exit(0) ;
 }
 
-Semaphore *ARTK_CreateSema(int initial_count)
+/*Semaphore *ARTK_CreateSema(int initial_count)
 {
 	Semaphore *s;
 	s = new Semaphore(initial_count);
 	return s;
-}
+}*/
 
 void ARTK_SetOptions(int iLargeModel, int iTimerUsec)
 {
    if (iLargeModel == -1)
-      //Scheduler::largeModel = FALSE ;
       glargeModel = FALSE ;
    else
-      //Scheduler::largeModel = iLargeModel ;
       glargeModel = iLargeModel ;
       
    if (iTimerUsec == -1) 
-      //Scheduler::timerUsec = TIMER_USEC ;
       gtimerUsec = TIMER_USEC ;
    else
    {
-      if (iTimerUsec < 1000)
-         printf("WARNING: do you really need sleep res < 1 msec?\n") ;
-      //Scheduler::timerUsec = iTimerUsec ;
       gtimerUsec = iTimerUsec ;
    }
 }
 
 // like printf - to the Arduino Serial Monitor
-void Printf(char *fmt, ... ) 
+void Printf(char *fmt, ... )
 {
    char tmp[128]; // resulting string limited to 128 chars
    va_list args;
@@ -653,7 +727,9 @@ void setup()
    
    // Printf("setup creating scheduler and CS semaphore\n") ; 
    Scheduler::Instance();
-   ARTK_mutex = ARTK_CreateSema(1);
+   DQNodeManager::Instance();
+   TaskManager::Instance();
+   //ARTK_mutex = ARTK_CreateSema(1);
 
    // init the sleep timer
    Timer1.initialize(gtimerUsec) ;
@@ -668,16 +744,15 @@ void setup()
    // Printf("Creating Idle task\n", Idle) ;
    // Setup() must be called before doing this in case the memory model
    // is changed there 
-   ARTK_CreateTask(Idle, 0, IDLE_STACK) ;
+   //ARTK_CreateTask(Idle, IDLE_STACK) ;
 
-   Printf("Start Tasking\n") ; 
+   //Printf("Start Tasking\n") ;
    // store the SP for free memory estimation (task stacks are separate
    // from the main stack, which is abandoned at this point)
-   glastSP = (unsigned char *)(SP) ;
    Scheduler::InstancePtr->startMultiTasking() ;
 }
 
 void loop() 
 {
-   Printf("Something is wrong\n") ;
+   //Printf("Something is wrong\n") ;
 }

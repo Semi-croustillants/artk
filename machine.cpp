@@ -86,7 +86,7 @@ void ContextSwitch(unsigned char **fromSP, unsigned char *toSP, int firstRun)
      "push r28           \n\t"
      "push r29           \n\t"
      "push r30           \n\t"
-     "push r31           \n\t"    
+     "push r31           \n\t"
    ) ;
      
    // update the exiting process SP

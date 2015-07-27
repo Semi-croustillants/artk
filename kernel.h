@@ -52,24 +52,20 @@
 #define FALSE 0 
 
 // just won't work w/ less than MIN_STACK
-#define MIN_STACK     256       
-#define IDLE_STACK    256       
+#define MIN_STACK     256
 
 // task states
 #define TASK_READY         1    // Task is ready
 #define TASK_ACTIVE        2    // Task is currently running
 #define TASK_BLOCKED       3    // Task is blocked on a semaphore
 #define SLEEP_BLOCKED      4    // Task is sleeping
-#define SEM_TIMED_BLOCKED  5    // Task is blocked on a sema with timeout
 
 // Task priorities
-#define LOWEST_PRIORITY   0 
-#define HIGHEST_PRIORITY  16 
-#define PRIORITY_LEVELS   17 
+/*#define LOWEST_PRIORITY   0
+#define HIGHEST_PRIORITY  1
+#define PRIORITY_LEVELS   2*/
 
-// return values from timed wait on semaphore
-#define TIMED_OUT    -1
-#define ACQUIRED_SEMA 0
+#define MAX_THREAD_LIST 5
 
 // The scheduler maintains an array of circular lists - one for each priority.
 // Each semaphore maintains a circular list.
@@ -117,7 +113,7 @@ private:
     // This links the task into a doubly-linked list
 	DNode mylink ;
 
-	uint8_t priority ;  // Task priority
+	//uint8_t priority ;  // Task priority
 	uint8_t state ;     // Task state
 	uint8_t firstRun ;  // True if task has never been swapped in
 
@@ -126,24 +122,27 @@ private:
 
     void (*rootFn)() ;
 
-    // The following is set when the task times out while waiting
-	uint8_t timedOut ;
+
 
 public:
     // Task's stack	and root function pointer
-    unsigned char *stack ;
+    unsigned char stack[MIN_STACK];
 
 private:
     // This method is executed when a task returns from it's root function
 	static void taskDone();
 
 public:
+	unsigned char inUse;
+
     // These change the task state.
 	void makeTaskReady() { state = TASK_READY ; }
 	void makeTaskActive() { state = TASK_ACTIVE ; }
 	void makeTaskBlocked(){ state = TASK_BLOCKED ; }
 	void makeTaskSleepBlocked(){ state = SLEEP_BLOCKED ; }
-	void makeTaskSemaphoreTimedBlocked() { state = SEM_TIMED_BLOCKED ; }
+	void setFunction(void (*rootFnPtr)()) { rootFn = rootFnPtr; }
+	//void setPriority(uint8_t priority) { this->priority = priority; }
+	void PushScheduler();
 
 	uint8_t myState() { return state; }
 
@@ -151,29 +150,69 @@ public:
 	void task_sleep(unsigned time);
 
     // creates a new task
-	Task(void (*rootFnPtr)(), uint8_t priority, unsigned stackSize) ;
+	//Task(void (*rootFnPtr)(), uint8_t priority, unsigned stackSize) ;
+
+	Task();
 	   
     // destructor cleans up the stack space
     // the new and delete operators are broken for arrays in AVR
-	~Task() { if (stack) free(stack) ; }
+	~Task() { }
 } ;
 
+
+////TEST
+class TaskManager
+{
+private:
+	Task listTask[MAX_THREAD_LIST];
+	TaskManager() {};
+public:
+	static TaskManager *instPtr;
+	static void Instance();
+	Task *getFreeTask();
+	void releaseTask(Task *addr);
+};
+
+class DQNode
+{
+public:
+	Task *pTask ;
+	DQNode *pNext ;
+	unsigned int dcount ;
+	char inUse = false;
+};
+
+class DQNodeManager
+{
+private:
+	// List of DQNode (static allocation memory)
+	DQNode DQList[MAX_THREAD_LIST];
+	// Constructor of DQNodeManager
+	DQNodeManager() {};
+
+public:
+	static DQNodeManager *instPtr;
+	static void Instance();
+	DQNode *getFreeDQNode();
+	void releaseDQNode(DQNode *addr);
+};
+
 //  Semaphore class
-class Semaphore
+/*class Semaphore
 {
 private:
 	int	    count ;
 	DNode   taskList ;
 	
 public:
-	void	wait() ;
+	//void	wait() ;
 	int 	wait(unsigned int timeout) ;
 	void 	signal() ;
 
     // allocates a new semaphore object with a default initial count of 0
 	Semaphore(int initialCount = 0) ;
 	~Semaphore() {}
-} ;
+} ;*/
 
 // this class implements the ARTK task scheduler
 class Scheduler
@@ -181,7 +220,7 @@ class Scheduler
 private:
     // For each priority level, the scheduler maintains a queue 
     // of process descriptors for that are ready to run.
-	DNode readyList[PRIORITY_LEVELS] ;
+	DNode readyList; //[PRIORITY_LEVELS] ;
 
     // Total number of tasks, including the Main task
 	int numTasks ;
@@ -197,10 +236,10 @@ public:
 	void startMultiTasking() ;
 
     // returns the stack space left for the active task
-    unsigned int stackLeft() ;
+    //unsigned int stackLeft() ;
 
     // add/remove tasks on the ready lists
-	void addready(Task *t) { readyList[t->priority].addLast(&t->mylink) ; }
+	void addready(Task *t) { readyList.addLast(&t->mylink) ; }
 	void removeready(Task *t) { t->mylink.remove() ; }
 	char addNewTask(Task *t) ;
 	void removeTask() ;
