@@ -32,6 +32,9 @@
   along with ARTK.  If not, see <http://www.gnu.org/licenses/>.
 ****************************************************************************/
 
+// Modifications by SYLVESTRE François
+
+
 // Usage Notes:
 // ARTK makes use of the Arduino TimerOne library, which is distributed with it.
 // You must NOT implement a setup() function
@@ -48,8 +51,8 @@
 
 // -----------------------------------------------------------------
 // globals
-const char *release = "0.3_custom" ;
-const int year = 2014 ;
+//const char *release = "0.3_custom" ;
+//const int year = 2014 ;
 int glargeModel = FALSE ;
 int gtimerUsec = TIMER_USEC ;
 unsigned char *glastSP = 0 ;
@@ -255,8 +258,8 @@ Scheduler::Scheduler()
 	numTasks = 0 ;
 	activeTask = NULL ;
 
-    Printf("ARTK release %s\n", release) ;
-    Printf("Paul Schimpf, %d, GNU GPL\n", year) ;
+    //Printf("ARTK release %s\n", release) ;
+    //Printf("Paul Schimpf, %d, GNU GPL\n", year) ;
 }
 
 /****
@@ -700,10 +703,10 @@ void ARTK_SetOptions(int iLargeModel, int iTimerUsec)
 // like printf - to the Arduino Serial Monitor
 void Printf(char *fmt, ... )
 {
-   char tmp[128]; // resulting string limited to 128 chars
+   char tmp[20]; // resulting string limited to 128 chars
    va_list args;
    va_start (args, fmt );
-   vsnprintf(tmp, 128, fmt, args);
+   vsnprintf(tmp, 20, fmt, args);
    va_end (args);
    Serial.print(tmp);
    Serial.flush() ;

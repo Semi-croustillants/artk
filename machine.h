@@ -29,6 +29,9 @@
   along with ARTK.  If not, see <http://www.gnu.org/licenses/>.
 ****************************************************************************/
 
+// Modifications by SYLVESTRE François
+
+
 // Usage Notes:
 // ARTK makes use of the Arduino TimerOne library, which is distributed with it.
 // You must NOT implement a setup() function
