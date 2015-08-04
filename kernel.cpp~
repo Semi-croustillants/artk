@@ -470,6 +470,8 @@ extern void SetupARTK() ;
 void setup()
 {
    glargeModel = FALSE ;
+
+<<<<<<< HEAD
    Scheduler::Instance();
    DQNodeManager::Instance();
    TaskManager::Instance();
