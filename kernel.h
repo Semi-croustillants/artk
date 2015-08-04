@@ -108,7 +108,7 @@ class Task
 {
 private:
     // This should probably be cleaned up
-	friend void  timerISR() ;
+	//friend void  timerISR() ;
 	friend class Scheduler ;
 
     // This links the task into a doubly-linked list
@@ -179,7 +179,8 @@ class DQNode
 public:
 	Task *pTask ;
 	DQNode *pNext ;
-	unsigned int dcount ;
+	long dcount ;
+	unsigned long start;
 	char inUse = false;
 };
 
@@ -244,6 +245,7 @@ public:
 	void removeready(Task *t) { t->mylink.remove() ; }
 	char addNewTask(Task *t) ;
 	void removeTask() ;
+	char timerISR();
 
     // called by the active task when it is willing to yield
 	void relinquish() ;

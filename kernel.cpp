@@ -43,10 +43,10 @@
 // Implement a Main() function instead, which will be the lowest priority task
 // See the file ARTKtest.ino for example usage 
  
-#include  <stdarg.h>     // for va_xxx
-#include  <stdio.h>      // for vsnprintf
+//#include  <stdarg.h>     // for va_xxx
+//#include  <stdio.h>      // for vsnprintf
 #include  <Arduino.h>    // for Serial
-#include  <TimerOne.h>
+//#include  <TimerOne.h>
 #include  <kernel.h>
 
 // -----------------------------------------------------------------
@@ -113,6 +113,7 @@ DQNode *DQNodeManager::getFreeDQNode() {
 	for (i = 0; i < MAX_THREAD_LIST; i++) {
 		if (!DQList[i].inUse) {
 			DQList[i].inUse = !DQList[i].inUse;
+			DQList[i].start = millis();
 			return &DQList[i];
 		}
 	}
@@ -158,7 +159,7 @@ void addSleeper(Task *pTask, unsigned int count)
       pOneBack = NULL ;
       while ( (pCurrent != NULL) && (pCurrent->dcount < pNew->dcount) )
       {
-	     pNew->dcount -= pCurrent->dcount ;
+	     //pNew->dcount -= pCurrent->dcount ;
          pOneBack = pCurrent ;
          pCurrent = pCurrent->pNext ;
       }
@@ -167,7 +168,7 @@ void addSleeper(Task *pTask, unsigned int count)
       if (pOneBack == NULL)   
       {
          // decrement the current head count by the new count
-         pSleepHead->dcount -= pNew->dcount ;
+         //pSleepHead->dcount -= pNew->dcount ;
 		 pSleepHead = pNew ;
 		 pNew->pNext = pCurrent ;
       } 
@@ -180,7 +181,7 @@ void addSleeper(Task *pTask, unsigned int count)
       else 
       {
          // decrement the follower count by the new count
-         pCurrent->dcount -= pNew->dcount ;
+         //pCurrent->dcount -= pNew->dcount ;
          pOneBack->pNext = pNew ;
          pNew->pNext = pCurrent ;
 	  }
@@ -194,7 +195,7 @@ Task *removeWaker()
    DQNode *pTemp ;
 
    pTask = NULL ;
-   if ( (pSleepHead != NULL) && (pSleepHead->dcount == 0) )
+   if ( (pSleepHead != NULL) && (pSleepHead->dcount <= 0) )
    {
       pTemp = pSleepHead ;
       pSleepHead = pTemp->pNext ;
@@ -207,8 +208,18 @@ Task *removeWaker()
 // Decrements the counter of the first node in the sleep queue
 void sleepDecrement()
 {
-   if (pSleepHead != NULL)
-      pSleepHead->dcount-- ;
+   unsigned long current;
+   DQNode *tmp = pSleepHead;
+   if (pSleepHead != NULL) {
+	   current = millis();
+	   pSleepHead->dcount-= current-pSleepHead->start ;
+	   pSleepHead->start = current;
+	   while (tmp->pNext != NULL) {
+		   tmp = tmp->pNext;
+		   tmp->dcount -= current-tmp->start ;
+		   tmp->start = current;
+	   }
+   }
 }
 
 // search for a task and remove it from the sleep queue
@@ -237,8 +248,8 @@ void removeSleeper(Task *pTask)
          
          // adjust the delta of the following entry up
          pNext = pCurrent->pNext ;
-         if (pNext != NULL) 
-            pNext->dcount += pCurrent->dcount ;
+         //if (pNext != NULL)
+         //   pNext->dcount += pCurrent->dcount ;
          DQNodeManager::instPtr->releaseDQNode(pCurrent);
       } 
       else 
@@ -301,8 +312,8 @@ void Scheduler::resched()
 		newTask = (Task *)readyList.removeFront() ;
 	}
 	else {
-		this->relinquish();
-		//newTask = (Task *)readyList[LOWEST_PRIORITY].removeFront() ;
+		while (!this->timerISR());
+		newTask = (Task *)readyList.removeFront() ;
 	}
 
 	// If calling task is still the highest priority just return
@@ -349,6 +360,7 @@ void Scheduler::resched()
 //  Called by a task when it is ready to yield
 void Scheduler::relinquish()
 {
+	timerISR();
 	activeTask->makeTaskReady() ;
 	addready(activeTask) ;
 	resched() ;
@@ -436,7 +448,7 @@ Task::Task() {
 //  this function.
 void Task::taskDone()
 {
-   // Printf("In taskDone\n") ;
+   //Printf("In taskDone\n") ;
    // added this call
    Scheduler::InstancePtr->removeready(Scheduler::InstancePtr->activeTask) ;
    Scheduler::InstancePtr->removeTask();
@@ -489,49 +501,30 @@ void TaskManager::releaseTask(Task *addr) {
 	}
 }
 
-void timerISR()
+char Scheduler::timerISR()
 {
+	char taskReady = FALSE;
 	Task *pWakeup ;
-	//int contextSwitchNeeded = FALSE ;
-
-    // interrupts will be disabled on the way in
-    
 	// Check for waiting tasks that have timed out and 
     // sleeping tasks that must be woken
-	Task *active = Scheduler::InstancePtr->activeTask ;
+	//Task *active = Scheduler::InstancePtr->activeTask ;
 	
 	// decrement the count of the head of the sleepq
 	sleepDecrement() ;
 	
 	// get all those off the sleep q that are at 0
 	pWakeup = removeWaker() ;
-	while (pWakeup != NULL) 
-    {
-		// A task that blocked on a semaphore has timed out 
-        // Remove it from the semaphore list and flag the semaphore timeout
-		/*if (pWakeup->myState() == SEM_TIMED_BLOCKED)
-		{
-		    pWakeup->timedOut = TRUE ;
-			pWakeup->mylink.remove() ;
-        }*/
-        
+	while (pWakeup != NULL)
+	{
         // either way (semaphore or just sleeping), it goes to ready list
         pWakeup->makeTaskReady() ;
 		Scheduler::InstancePtr->addready(pWakeup) ;
-		/*if (pWakeup->priority > active->priority)
-			contextSwitchNeeded = TRUE ;*/
 
         // see if anymore are at 0
 		pWakeup = removeWaker() ;
+		taskReady = TRUE;
 	}
-	/*if (contextSwitchNeeded)
-    {
-		active->makeTaskReady() ;
-		Scheduler::InstancePtr->addready(active) ;
-		Scheduler::InstancePtr->resched() ;
-	}*/
-	
-	// interrupts will be reenabled on the way out
+	return taskReady;
 }
 
 //--------------------------------------------------------------------------
@@ -649,10 +642,10 @@ void Semaphore::signal()
 void Idle()
 {
    while (1) {
+	   Scheduler::InstancePtr->timerISR();
 	   ARTK_Yield();
    }
 }
-
 Task *ARTK_CreateTask(void (*rootFnPtr)(), unsigned stacksize)
 {
 
@@ -674,7 +667,7 @@ void ARTK_TerminateMultitasking()
 {
    //Printf("All tasks done, exiting\n") ;
    // stop timer isr
-   Timer1.detachInterrupt() ;
+   //Timer1.detachInterrupt() ;
    exit(0) ;
 }
 
@@ -701,7 +694,7 @@ void ARTK_SetOptions(int iLargeModel, int iTimerUsec)
 }
 
 // like printf - to the Arduino Serial Monitor
-void Printf(char *fmt, ... )
+/*void Printf(char *fmt, ... )
 {
    char tmp[20]; // resulting string limited to 128 chars
    va_list args;
@@ -710,7 +703,7 @@ void Printf(char *fmt, ... )
    va_end (args);
    Serial.print(tmp);
    Serial.flush() ;
-}
+}*/
 
 //-------------------------------------------------------------------------
 // Main and Idle tasks, startup functions 
@@ -726,7 +719,7 @@ void setup()
    glargeModel = FALSE ;
 
    // init the serial channel 
-   Serial.begin(9600) ;
+   //Serial.begin(9600) ;
    
    // Printf("setup creating scheduler and CS semaphore\n") ; 
    Scheduler::Instance();
@@ -735,8 +728,8 @@ void setup()
    //ARTK_mutex = ARTK_CreateSema(1);
 
    // init the sleep timer
-   Timer1.initialize(gtimerUsec) ;
-   Timer1.attachInterrupt(timerISR) ;
+   //Timer1.initialize(gtimerUsec) ;
+   //Timer1.attachInterrupt(timerISR) ;
 
    // disable interrupts in case user is installing any?
    // cli() ;
@@ -747,7 +740,7 @@ void setup()
    // Printf("Creating Idle task\n", Idle) ;
    // Setup() must be called before doing this in case the memory model
    // is changed there 
-   //ARTK_CreateTask(Idle, IDLE_STACK) ;
+   //ARTK_CreateTask(Idle, MIN_STACK) ;
 
    //Printf("Start Tasking\n") ;
    // store the SP for free memory estimation (task stacks are separate
