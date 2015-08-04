@@ -47,14 +47,19 @@
 #include <stdlib.h>
 #include <ARTK.h>
 
-#define TIMER_USEC  10000      // 10 msec sleep timer 
-#define SERIAL_BAUD 9600
-
 #define TRUE  1 
 #define FALSE 0 
 
 // just won't work w/ less than MIN_STACK
-#define MIN_STACK     256
+#if defined(__AVR_ATmega328P__)
+	#define MIN_STACK 128
+#elif defined (__AVR_ATmega1280__)
+	#define MIN_STACK 256
+#elif defined (__AVR_ATmega2560__)
+	#define MIN_STACK 384
+#else
+	#define MIN_STACK 128
+#endif
 
 // task states
 #define TASK_READY         1    // Task is ready
@@ -62,12 +67,19 @@
 #define TASK_BLOCKED       3    // Task is blocked on a semaphore
 #define SLEEP_BLOCKED      4    // Task is sleeping
 
-// Task priorities
-/*#define LOWEST_PRIORITY   0
-#define HIGHEST_PRIORITY  1
-#define PRIORITY_LEVELS   2*/
+#ifndef MAX_THREAD_LIST
+	#define MAX_THREAD_LIST 5
+#endif
 
-#define MAX_THREAD_LIST 5
+// Define structure with field byte for Task
+// This is for state & firstrun
+
+typedef struct TaskParameter {
+	unsigned char state : 2;
+	unsigned char firstRun : 2;
+	unsigned char inUse : 2;
+	unsigned char : 2;
+} TaskParameter;
 
 // The scheduler maintains an array of circular lists - one for each priority.
 // Each semaphore maintains a circular list.
@@ -108,50 +120,33 @@ class Task
 {
 private:
     // This should probably be cleaned up
-	friend void  timerISR() ;
 	friend class Scheduler ;
 
     // This links the task into a doubly-linked list
 	DNode mylink ;
 
-	//uint8_t priority ;  // Task priority
-	uint8_t state ;     // Task state
-	uint8_t firstRun ;  // True if task has never been swapped in
-
     // During a context switch, the SP is saved here
 	unsigned char *pStack ;
 
     void (*rootFn)() ;
-
-
+    // This method is executed when a task returns from it's root function
+    static void taskDone();
 
 public:
     // Task's stack	and root function pointer
     unsigned char stack[MIN_STACK];
-
-private:
-    // This method is executed when a task returns from it's root function
-	static void taskDone();
-
-public:
-	unsigned char inUse;
+    TaskParameter parameter;
 
     // These change the task state.
-	void makeTaskReady() { state = TASK_READY ; }
-	void makeTaskActive() { state = TASK_ACTIVE ; }
-	void makeTaskBlocked(){ state = TASK_BLOCKED ; }
-	void makeTaskSleepBlocked(){ state = SLEEP_BLOCKED ; }
+	void makeTaskReady() { parameter.state = TASK_READY ; }
+	void makeTaskActive() { parameter.state = TASK_ACTIVE ; }
+	void makeTaskBlocked(){ parameter.state = TASK_BLOCKED ; }
+	void makeTaskSleepBlocked(){ parameter.state = SLEEP_BLOCKED ; }
 	void setFunction(void (*rootFnPtr)()) { rootFn = rootFnPtr; }
-	//void setPriority(uint8_t priority) { this->priority = priority; }
 	void PushScheduler();
-
-	uint8_t myState() { return state; }
 
     // called by the user's sleep() wrapper function.
 	void task_sleep(unsigned time);
-
-    // creates a new task
-	//Task(void (*rootFnPtr)(), uint8_t priority, unsigned stackSize) ;
 
 	Task();
 	   
@@ -165,13 +160,13 @@ public:
 class TaskManager
 {
 private:
-	Task listTask[MAX_THREAD_LIST];
+	static Task listTask[MAX_THREAD_LIST];
 	TaskManager() {};
 public:
 	static TaskManager *instPtr;
 	static void Instance();
 	Task *getFreeTask();
-	void releaseTask(Task *addr);
+	static void releaseTask(Task *addr);
 };
 
 class DQNode
@@ -179,15 +174,16 @@ class DQNode
 public:
 	Task *pTask ;
 	DQNode *pNext ;
-	unsigned int dcount ;
-	char inUse = false;
+	long dcount ;
+	unsigned long start;
+	char inUse = FALSE;
 };
 
 class DQNodeManager
 {
 private:
 	// List of DQNode (static allocation memory)
-	DQNode DQList[MAX_THREAD_LIST];
+	static DQNode DQList[MAX_THREAD_LIST];
 	// Constructor of DQNodeManager
 	DQNodeManager() {};
 
@@ -198,23 +194,6 @@ public:
 	void releaseDQNode(DQNode *addr);
 };
 
-//  Semaphore class
-/*class Semaphore
-{
-private:
-	int	    count ;
-	DNode   taskList ;
-	
-public:
-	//void	wait() ;
-	int 	wait(unsigned int timeout) ;
-	void 	signal() ;
-
-    // allocates a new semaphore object with a default initial count of 0
-	Semaphore(int initialCount = 0) ;
-	~Semaphore() {}
-} ;*/
-
 // this class implements the ARTK task scheduler
 class Scheduler
 {
@@ -224,7 +203,7 @@ private:
 	DNode readyList; //[PRIORITY_LEVELS] ;
 
     // Total number of tasks, including the Main task
-	int numTasks ;
+	unsigned char numTasks ;
 
 public:
     // Pointer to the single instance of scheduler
@@ -244,6 +223,7 @@ public:
 	void removeready(Task *t) { t->mylink.remove() ; }
 	char addNewTask(Task *t) ;
 	void removeTask() ;
+	char timerISR();
 
     // called by the active task when it is willing to yield
 	void relinquish() ;

@@ -42,19 +42,13 @@
 // You must NOT implement a loop() function
 // Implement a Main() function instead, which will be the lowest priority task
 // See the file ARTKtest.ino for example usage 
- 
-#include  <stdarg.h>     // for va_xxx
-#include  <stdio.h>      // for vsnprintf
-#include  <Arduino.h>    // for Serial
-#include  <TimerOne.h>
+
+#include  <Arduino.h>    // for millis()
 #include  <kernel.h>
 
 // -----------------------------------------------------------------
 // globals
-//const char *release = "0.3_custom" ;
-//const int year = 2014 ;
 int glargeModel = FALSE ;
-int gtimerUsec = TIMER_USEC ;
 unsigned char *glastSP = 0 ;
 Scheduler *Scheduler::InstancePtr = 0 ;
 DQNodeManager *DQNodeManager::instPtr = 0;
@@ -102,6 +96,8 @@ void DNode::remove()
 // The counts remaining for a particular entry is the sum off all dcounts
 // up to and including that entry
 
+DQNode DQNodeManager::DQList[MAX_THREAD_LIST];
+
 void DQNodeManager::Instance() {
 	if (instPtr == NULL) {
 		instPtr = new DQNodeManager;
@@ -113,6 +109,7 @@ DQNode *DQNodeManager::getFreeDQNode() {
 	for (i = 0; i < MAX_THREAD_LIST; i++) {
 		if (!DQList[i].inUse) {
 			DQList[i].inUse = !DQList[i].inUse;
+			DQList[i].start = millis();
 			return &DQList[i];
 		}
 	}
@@ -158,7 +155,6 @@ void addSleeper(Task *pTask, unsigned int count)
       pOneBack = NULL ;
       while ( (pCurrent != NULL) && (pCurrent->dcount < pNew->dcount) )
       {
-	     pNew->dcount -= pCurrent->dcount ;
          pOneBack = pCurrent ;
          pCurrent = pCurrent->pNext ;
       }
@@ -167,7 +163,6 @@ void addSleeper(Task *pTask, unsigned int count)
       if (pOneBack == NULL)   
       {
          // decrement the current head count by the new count
-         pSleepHead->dcount -= pNew->dcount ;
 		 pSleepHead = pNew ;
 		 pNew->pNext = pCurrent ;
       } 
@@ -180,7 +175,6 @@ void addSleeper(Task *pTask, unsigned int count)
       else 
       {
          // decrement the follower count by the new count
-         pCurrent->dcount -= pNew->dcount ;
          pOneBack->pNext = pNew ;
          pNew->pNext = pCurrent ;
 	  }
@@ -194,7 +188,7 @@ Task *removeWaker()
    DQNode *pTemp ;
 
    pTask = NULL ;
-   if ( (pSleepHead != NULL) && (pSleepHead->dcount == 0) )
+   if ( (pSleepHead != NULL) && (pSleepHead->dcount <= 0) )
    {
       pTemp = pSleepHead ;
       pSleepHead = pTemp->pNext ;
@@ -207,8 +201,18 @@ Task *removeWaker()
 // Decrements the counter of the first node in the sleep queue
 void sleepDecrement()
 {
-   if (pSleepHead != NULL)
-      pSleepHead->dcount-- ;
+   unsigned long current;
+   DQNode *tmp = pSleepHead;
+   if (pSleepHead != NULL) {
+	   current = millis();
+	   pSleepHead->dcount-= current-pSleepHead->start ;
+	   pSleepHead->start = current;
+	   while (tmp->pNext != NULL) {
+		   tmp = tmp->pNext;
+		   tmp->dcount -= current-tmp->start ;
+		   tmp->start = current;
+	   }
+   }
 }
 
 // search for a task and remove it from the sleep queue
@@ -237,8 +241,6 @@ void removeSleeper(Task *pTask)
          
          // adjust the delta of the following entry up
          pNext = pCurrent->pNext ;
-         if (pNext != NULL) 
-            pNext->dcount += pCurrent->dcount ;
          DQNodeManager::instPtr->releaseDQNode(pCurrent);
       } 
       else 
@@ -253,22 +255,12 @@ void removeSleeper(Task *pTask)
 //-------------------------------------------------------------
 // Scheduler
 //
+
 Scheduler::Scheduler()
 {
 	numTasks = 0 ;
 	activeTask = NULL ;
-
-    //Printf("ARTK release %s\n", release) ;
-    //Printf("Paul Schimpf, %d, GNU GPL\n", year) ;
 }
-
-/****
-// got rid of this extra layer by making stack member public (so shoot me)
-int Scheduler::stackLeft()
-{
-    return ((unsigned char *)(SP)-activeTask->stack) ;
-}
-****/
 
 // called when a new task is created
 char Scheduler::addNewTask(Task *t)
@@ -301,8 +293,8 @@ void Scheduler::resched()
 		newTask = (Task *)readyList.removeFront() ;
 	}
 	else {
-		this->relinquish();
-		//newTask = (Task *)readyList[LOWEST_PRIORITY].removeFront() ;
+		while (!this->timerISR());
+		newTask = (Task *)readyList.removeFront() ;
 	}
 
 	// If calling task is still the highest priority just return
@@ -319,15 +311,6 @@ void Scheduler::resched()
 	// a context switch is necessary - clear interrupts while we do this
 	// interrupts are reenabled when the new task is swapped in
     cli() ;
-    	
-	/***
-	sei() ;
-	Printf("about to context switch\n") ;
-	if (oldTask != NULL)
-	Printf("from root ptr=%x, SP=%x \n", oldTask->rootFn, oldTask->pStack) ;
-	Printf("to root ptr=%x, SP=%x \n", newTask->rootFn, newTask->pStack) ;
-	cli() ;
-	***/
 	
 	// swap the new task in
 	// if it is the first run, then use processor state from current task
@@ -335,8 +318,8 @@ void Scheduler::resched()
 	// if the oldTask is NULL then this is the first time we've ever done
 	// a task switch, and we don't try to save the context (IOW, the stack
 	// state of main() is abandoned on the first task switch)
-	int firstRun = activeTask->firstRun ;
-	activeTask->firstRun = FALSE ;
+	int firstRun = activeTask->parameter.firstRun ;
+	activeTask->parameter.firstRun = FALSE ;
 	if (oldTask != NULL) {
 		ContextSwitch(&oldTask->pStack, activeTask->pStack, firstRun) ;
 	}
@@ -349,6 +332,7 @@ void Scheduler::resched()
 //  Called by a task when it is ready to yield
 void Scheduler::relinquish()
 {
+	timerISR();
 	activeTask->makeTaskReady() ;
 	addready(activeTask) ;
 	resched() ;
@@ -365,78 +349,18 @@ void Scheduler::startMultiTasking()
 {
     // get Idle and Main tasks going
     resched() ;   
-    // Printf("at end of startMultiTasking\n") ;
 }
 
-// Constructor for class Task
-/*Task::Task(void (*rootFnPtr)(), uint8_t taskPriority, unsigned stackSize) : mylink()
-{
-   rootFn = rootFnPtr ;
-   
-   inUse = FALSE;
-
-   //Printf("stack at %d\n", stack) ;
-    
-   //stack = (unsigned char *) new char[stackSize] ;
-   //char *goo = new char[10] ;
-   //stack = (unsigned char *) goo ;
-   firstRun = TRUE ;
-    
-   pStack = &stack[stackSize-1] ;
-	
-   // Initialize the stack so that the root function
-   // for this task returns to taskDone().
-   *pStack-- = (unsigned char)((long)Task::taskDone & 0x00ff) ;
-   *pStack-- = (unsigned char)(((long)Task::taskDone >> 8) & 0x00ff) ; 
-   if (glargeModel)
-      *pStack-- = (unsigned char)(((long)Task::taskDone >> 16) & 0x00ff) ; 
-	
-   // next put the entry function on the stack so we return to it after
-   // returning from a context switch
-   *pStack-- = (unsigned char)((long)rootFnPtr & 0x00ff) ;
-   *pStack-- = (unsigned char)(((long)rootFnPtr >> 8) & 0x00ff) ;
-   if (glargeModel)
-      *pStack-- = (unsigned char)(((long)rootFnPtr >> 16) & 0x00ff) ; 
-    
-   // what goes next on the stack are 32 registers and SREG = 33
-   // for (int i=0 ; i <33 ; i++) *pStack-- = 0 ;
-
-   priority = taskPriority ;
-
-   // Ask the scheduler to add this task to the ready list
-   Scheduler::InstancePtr->addNewTask(this) ;
-
-   /****
-   Printf("Initialized Process Descriptor Table for:\n") ;
-   Printf("SP=%x, IP=%x\n", pStack, rootFnPtr) ;
-   //Printf("Stack Dump:\n") ;
-   //unsigned char *temp = &stack[stackSize-1] ;
-   //while (temp>=pStack) Printf("%hhx ", *temp--) ;
-   //Printf("\n") ;
-   ****/
-//}
-
 Task::Task() {
-
-	   firstRun = TRUE ;
-
-	   inUse = FALSE;
-
-	   pStack = &stack[MIN_STACK-1] ;
-	   // Initialize the stack so that the root function
-	   // for this task returns to taskDone().
-	   //*pStack-- = (unsigned char)((long)Task::taskDone & 0x00ff) ;
-	   //*pStack-- = (unsigned char)(((long)Task::taskDone >> 8) & 0x00ff) ;
-	   //if (glargeModel)
-	   //   *pStack-- = (unsigned char)(((long)Task::taskDone >> 16) & 0x00ff) ;
-	   //priority = 1;
+	parameter.firstRun = TRUE ;
+	parameter.inUse = FALSE;
+	pStack = &stack[MIN_STACK-1] ;
 }
 
 //  When the root function for a task returns, it executes
 //  this function.
 void Task::taskDone()
 {
-   // Printf("In taskDone\n") ;
    // added this call
    Scheduler::InstancePtr->removeready(Scheduler::InstancePtr->activeTask) ;
    Scheduler::InstancePtr->removeTask();
@@ -463,6 +387,8 @@ void Task::PushScheduler() {
 	Scheduler::InstancePtr->addNewTask(this) ;
 }
 
+Task TaskManager::listTask[MAX_THREAD_LIST];
+
 void TaskManager::Instance() {
 	if (instPtr == NULL) {
 		instPtr = new TaskManager;
@@ -472,8 +398,8 @@ void TaskManager::Instance() {
 Task* TaskManager::getFreeTask() {
 	unsigned char i;
 	for (i = 0; i < MAX_THREAD_LIST; i++) {
-		if (!listTask[i].inUse) {
-			listTask[i].inUse = !listTask[i].inUse;
+		if (!listTask[i].parameter.inUse) {
+			listTask[i].parameter.inUse = !listTask[i].parameter.inUse;
 			return &listTask[i];
 		}
 	}
@@ -484,278 +410,77 @@ void TaskManager::releaseTask(Task *addr) {
 	unsigned char i;
 	for (i = 0; i < MAX_THREAD_LIST; i++) {
 		if (&listTask[i] == addr) {
-			listTask[i].inUse = FALSE;
+			listTask[i].parameter.inUse = FALSE;
 		}
 	}
 }
 
-void timerISR()
+char Scheduler::timerISR()
 {
+	char taskReady = FALSE;
 	Task *pWakeup ;
-	//int contextSwitchNeeded = FALSE ;
-
-    // interrupts will be disabled on the way in
-    
 	// Check for waiting tasks that have timed out and 
     // sleeping tasks that must be woken
-	Task *active = Scheduler::InstancePtr->activeTask ;
 	
 	// decrement the count of the head of the sleepq
 	sleepDecrement() ;
 	
 	// get all those off the sleep q that are at 0
 	pWakeup = removeWaker() ;
-	while (pWakeup != NULL) 
-    {
-		// A task that blocked on a semaphore has timed out 
-        // Remove it from the semaphore list and flag the semaphore timeout
-		/*if (pWakeup->myState() == SEM_TIMED_BLOCKED)
-		{
-		    pWakeup->timedOut = TRUE ;
-			pWakeup->mylink.remove() ;
-        }*/
-        
+	while (pWakeup != NULL)
+	{
         // either way (semaphore or just sleeping), it goes to ready list
         pWakeup->makeTaskReady() ;
 		Scheduler::InstancePtr->addready(pWakeup) ;
-		/*if (pWakeup->priority > active->priority)
-			contextSwitchNeeded = TRUE ;*/
 
         // see if anymore are at 0
 		pWakeup = removeWaker() ;
+		taskReady = TRUE;
 	}
-	/*if (contextSwitchNeeded)
-    {
-		active->makeTaskReady() ;
-		Scheduler::InstancePtr->addready(active) ;
-		Scheduler::InstancePtr->resched() ;
-	}*/
-	
-	// interrupts will be reenabled on the way out
+	return taskReady;
 }
-
-//--------------------------------------------------------------------------
-//  Semaphore Class
-/*Semaphore::Semaphore(int initialCount) : taskList()
-{
-   count = initialCount ;
-}
-
-void Semaphore::wait()
-{
-    cli() ;    // no preempt while check and possibly modify count
-    // if available, give it and return
-	if (count > 0) 
-    {
-		count-- ;
-		sei() ;
-	} 
-    else 
-    {
-		// block the caller
-		Task* active = Scheduler::InstancePtr->activeTask ;
-		active->makeTaskBlocked() ;
-		// move the active task to this semaphore queue
-		taskList.addLast(&active->mylink) ;
-		Scheduler::InstancePtr->resched() ;  // this call reenables
-	}
-}
-
-int Semaphore::wait(unsigned int timeout)
-{
-    // set the task status to not timed out (yet)
-    Task *active = Scheduler::InstancePtr->activeTask ;
-	active->timedOut = FALSE ;
-
-    cli() ;    // no preempt while check and possibly modify count    
-	// if available, give it and return
-	if (count>0) 
-    {
-	   count-- ;
-	   return ACQUIRED_SEMA ;
-	} 
-	
-	// if specified a 0 wait can return now
-    if (timeout == 0) {
-       sei() ;
-       return TIMED_OUT ;
-	}
-	
-    // otherwise, this task needs to sleep until either timeout
-    // or this semaphore is signaled
-
-    // cli() ;    // to keep sleepq and sematimedblocked consistent
-	// add the calling task to the sleep queue
-	addSleeper(active, timeout) ;
-	
-	// move the calling task to the semaphore queue and context switch
-	active->makeTaskSemaphoreTimedBlocked() ;
-	taskList.addLast(&active->mylink) ;
-    Scheduler::InstancePtr->resched() ;   // this call will reenable
-
-    // the calling task returns here after being swapped back in
-    // it is now the active task again, so check to see if its timed out flag
-    // was set by the timerISR at some point
-    if (active->timedOut) 
-       return TIMED_OUT ;
-       
-	return ACQUIRED_SEMA ;
-}
-
-void Semaphore::signal()
-{
-	Task    *t ;
-
-    // an ISR can call this, so make sure we don't allow that to happen
-    // while a task is inside
-	cli() ;
-	count++ ;   // increment the semaphore count
-	
-    // Remove the task at the front of this semaphore queue
-	if (!taskList.isEmpty())
-    {
-        count-- ;   
-		t  = (Task *)taskList.removeFront() ;
-		
-		// It may have been flagged with a timeout and not swapped in yet,
-		// so in that event we override the timedout flag so it knows it
-		// now has the semaphore when it swaps back in
-		t->timedOut = FALSE ;
-
-		// If the task is still in a timed wait remove it from the sleep q
-		if (t->myState() == SEM_TIMED_BLOCKED) removeSleeper(t) ;
-		
-		// the task is now ready to run
-		t->makeTaskReady() ;
-		Scheduler::InstancePtr->addready(t) ;
-		
-		// if the waiting task is higher priority, reschedule
-		if (t->priority > Scheduler::InstancePtr->activeTask->priority) 
-        {
-			Scheduler::InstancePtr->activeTask->makeTaskReady() ;
-			Scheduler::InstancePtr->addready(Scheduler::InstancePtr->activeTask) ;
-			Scheduler::InstancePtr->resched() ;
-		}
-	}
-	sei() ;     // can allow an ISR in now
-}*/
 
 //--------------------------------------------------------------------------
 // User-accessible constructs
 
-//Semaphore *ARTK_mutex ;   // used by the CS macro
-
-// extern void Idle() ;
-void Idle()
-{
-   while (1) {
-	   ARTK_Yield();
-   }
-}
-
 Task *ARTK_CreateTask(void (*rootFnPtr)(), unsigned stacksize)
 {
-
    Task *task = TaskManager::instPtr->getFreeTask();
-   //Printf("Get %d task\n", task);
-   if (rootFnPtr==Idle) {
-	   task->setFunction(rootFnPtr);
-	   //task->setPriority(0);
-	   task->PushScheduler();
-   }
-   else {
-	   task->setFunction(rootFnPtr);
-	   task->PushScheduler();
-   }
+   task->setFunction(rootFnPtr);
+   task->PushScheduler();
    return task ;
 }
 
 void ARTK_TerminateMultitasking()
 {
-   //Printf("All tasks done, exiting\n") ;
-   // stop timer isr
-   Timer1.detachInterrupt() ;
    exit(0) ;
 }
 
-/*Semaphore *ARTK_CreateSema(int initial_count)
-{
-	Semaphore *s;
-	s = new Semaphore(initial_count);
-	return s;
-}*/
-
-void ARTK_SetOptions(int iLargeModel, int iTimerUsec)
+void ARTK_SetOptions(int iLargeModel)
 {
    if (iLargeModel == -1)
       glargeModel = FALSE ;
    else
       glargeModel = iLargeModel ;
-      
-   if (iTimerUsec == -1) 
-      gtimerUsec = TIMER_USEC ;
-   else
-   {
-      gtimerUsec = iTimerUsec ;
-   }
-}
-
-// like printf - to the Arduino Serial Monitor
-void Printf(char *fmt, ... )
-{
-   char tmp[20]; // resulting string limited to 128 chars
-   va_list args;
-   va_start (args, fmt );
-   vsnprintf(tmp, 20, fmt, args);
-   va_end (args);
-   Serial.print(tmp);
-   Serial.flush() ;
 }
 
 //-------------------------------------------------------------------------
-// Main and Idle tasks, startup functions 
+// Main and Idle tasks, startup functions
 
-extern void Setup() ;
+extern void SetupARTK() ;
 
 void setup()
 {
-   //Scheduler::InstancePtr = NULL ;
-   //Scheduler::timerUsec = TIMER_USEC ;
-   //Scheduler::largeModel = FALSE ;
-   gtimerUsec = TIMER_USEC ;
    glargeModel = FALSE ;
 
-   // init the serial channel 
-   Serial.begin(9600) ;
-   
-   // Printf("setup creating scheduler and CS semaphore\n") ; 
    Scheduler::Instance();
    DQNodeManager::Instance();
    TaskManager::Instance();
-   //ARTK_mutex = ARTK_CreateSema(1);
 
-   // init the sleep timer
-   Timer1.initialize(gtimerUsec) ;
-   Timer1.attachInterrupt(timerISR) ;
+   SetupARTK() ;
 
-   // disable interrupts in case user is installing any?
-   // cli() ;
-   Setup() ;
-   // sei() ;
-   
-   // need an idle task in case all others are sleeping or exited
-   // Printf("Creating Idle task\n", Idle) ;
-   // Setup() must be called before doing this in case the memory model
-   // is changed there 
-   //ARTK_CreateTask(Idle, IDLE_STACK) ;
-
-   //Printf("Start Tasking\n") ;
-   // store the SP for free memory estimation (task stacks are separate
-   // from the main stack, which is abandoned at this point)
    Scheduler::InstancePtr->startMultiTasking() ;
 }
 
 void loop() 
-{
-   //Printf("Something is wrong\n") ;
-}
+{ }

@@ -42,53 +42,33 @@
  
 #ifndef ARTK_H
 #define ARTK_H
-#include <stdint.h>
+
 #include <kernel.h>
 
 // This library won't work on with task stacks less than about 210,
 // so the library won't let you set a stack size less than that
 // This is the default size - only a bit larger than the min
-#define DEFAULT_STACK 256
+#if defined(__AVR_ATmega328P__)
+	#define DEFAULT_STACK 128
+#elif defined (__AVR_ATmega1280__)
+	#define DEFAULT_STACK 256
+#elif defined (__AVR_ATmega2560__)
+	#define DEFAULT_STACK 384
+#elif defined (__AVR_ATmega32U4__)
+	#define DEFAULT_STACK 256
+#else
+	#define DEFAULT_STACK 128
+#endif
 
-//class Semaphore ;
 class Task ;
-//typedef Semaphore* SEMAPHORE ;
 typedef Task* TASK ;
-
-// utility to printf to serial port
-void Printf(char *fmt, ... )  ;
 
 // IMPORTANT: Call this from Setup() only, and only if you don't like a default
 // For each option, -1 says to use the default
 // iLargeModel:  1 if you have more than 64k memory (e.g., Mega)
 //               0 otherwise (e.g., UNO)
 //               Defaults to 0
-// iTimerUsec:   Number of microseconds for each timer tick.  You'll get a
-//               warning if this is less than 1000
-//               Defaults to 10000 (10 msec)
-void ARTK_SetOptions(int iLargeModel, int iTimerUsec) ;
-
-// a Task can call this to determine how much local stack space it has left
-// if it gets below about 203, things will probably break as the preemptive
-// kernel needs about that much space on any task to get business done
-// inline 
-//int ARTK_StackLeft() ;
-
-// this is a conservative estimate - it does not traverse the heap freelist, so 
-// it includes 16 bytes times the max number of simultaneous sleeps that have 
-// ever occurred at the time it is called. If the number of tasks sleeping is 
-// less than that max then there will be some additional space left on the 
-// freelist, but it is best to assume you will build to that number of sleepers
-// again at some point
-//inline 
-//int ARTK_EstAvailRam() ;
-
-// All code enclosed by the following Critical Section macro are protected by 
-// a single a global mutex.  Useful, for example, to prevent a waking Task of 
-// higher priority from interspersing output on a shared resource (like the
-// Serial link) with a lower-priority task that it preempts.
-/*extern SEMAPHORE ARTK_mutex ;
-#define CS(x) {ARTK_WaitSema(ARTK_mutex); x ARTK_SignalSema(ARTK_mutex);}*/
+void ARTK_SetOptions(int iLargeModel) ;
 
 // Task functions
 // Valid user task priority is 1 to 16 (1 being lowest)
@@ -113,22 +93,6 @@ void ARTK_Sleep(unsigned ticks) ;
 // exiting, or explicitly yielding:
 // inlined 
 void ARTK_Yield() ;
-
-// Multiple tasks can use the same root function, in which case this function
-// is handy for distinguishing between themselves at run-time:
-// inlined 
-TASK ARTK_MyId() ;
-
-// Semaphore functions - for the last the timeout is in ticks
-// The version with timeout returns -1 if it timed out, 0 if the semaphore
-// was acquired
-/*SEMAPHORE ARTK_CreateSema(int initial_count = 0) ;
-// inlined 
-void ARTK_WaitSema(SEMAPHORE semaphore) ;
-// inlined 
-void ARTK_SignalSema(SEMAPHORE semaphore) ;
-// inlined 
-int  ARTK_WaitSema(SEMAPHORE semaphore, unsigned timeout) ;*/
 
 // ARTK will terminate when all tasks return (including Main), or you can 
 // terminate early by calling this

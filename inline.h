@@ -35,63 +35,17 @@
 
 #include <Arduino.h>
 
-//extern unsigned char *glastSP ;
-
-/*inline
-void ARTK_WaitSema(Semaphore *semaphore)
-{
-	semaphore->wait() ;
-}
-
-inline 
-int ARTK_WaitSema(Semaphore *semaphore, unsigned int timeout)
-{
-	return semaphore->wait(timeout) ;
-}
-
-inline 
-void ARTK_SignalSema(Semaphore *semaphore)
-{
-	//Printf("space=%d\n", ARTK_StackLeft()) ;
-	semaphore->signal() ;
-}*/
-
 inline 
 void ARTK_Sleep(unsigned int ticks)
 {
 	Scheduler::InstancePtr->activeTask->task_sleep(ticks) ;
 }
 
-/*inline
-Task *ARTK_MyId()
-{
-    return Scheduler::InstancePtr->activeTask ;
-}*/
-
 inline 
 void ARTK_Yield()
 {
    Scheduler::InstancePtr->relinquish() ;
 }
-
-/*inline
-int ARTK_StackLeft()
-{
-   // return (Scheduler::InstancePtr->stackLeft()) ;
-   // Printf("SP = %d, stack = %d\n", SP, Scheduler::InstancePtr->activeTask->stack) ;
-   return ((unsigned char *)(SP) - Scheduler::InstancePtr->activeTask->stack) ;
-}
-
-extern void *__brkval ;
-inline 
-int ARTK_EstAvailRam()
-{
-   // SP grows down, heap grows up
-   // est space available as (SP-heapend)
-   if (glastSP==0)
-      return ( (SP) - ((unsigned int)__brkval) ) ;
-   return (glastSP - ((unsigned char *)__brkval)) ;
-}*/
 
 #endif
 
