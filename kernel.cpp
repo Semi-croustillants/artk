@@ -375,7 +375,7 @@ void Task::task_sleep(unsigned int cnt)
 		Scheduler::InstancePtr->resched() ;
 	}
 	else if (cnt > 0) {
-		delayMicroseconds(cnt * 500);
+		delayMicroseconds(cnt * 1000);
 		Scheduler::InstancePtr->relinquish();
 	}
 }
