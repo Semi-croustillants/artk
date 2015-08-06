@@ -368,15 +368,11 @@ void Task::taskDone()
 // the calling task is put to sleep for cnt ticks of the system timer
 void Task::task_sleep(unsigned int cnt)
 {
-	if (cnt > 10)
+	if (cnt > 0)
     {
 		makeTaskSleepBlocked() ;
 		addSleeper(this, cnt) ;
 		Scheduler::InstancePtr->resched() ;
-	}
-	else if (cnt > 0) {
-		delayMicroseconds(cnt * 1000);
-		Scheduler::InstancePtr->relinquish();
 	}
 }
 

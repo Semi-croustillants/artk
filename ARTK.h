@@ -54,8 +54,6 @@
 	#define DEFAULT_STACK 256
 #elif defined (__AVR_ATmega2560__)
 	#define DEFAULT_STACK 384
-#elif defined (__AVR_ATmega32U4__)
-	#define DEFAULT_STACK 256
 #else
 	#define DEFAULT_STACK 128
 #endif

@@ -67,12 +67,10 @@
 #define TASK_BLOCKED       3    // Task is blocked on a semaphore
 #define SLEEP_BLOCKED      4    // Task is sleeping
 
-#ifndef MAX_THREAD_LIST
-	#define MAX_THREAD_LIST 5
-#endif
+#define MAX_THREAD_LIST    5	// Max 5 threads
 
 // Define structure with field byte for Task
-// This is for state & firstrun
+// This is for state & firstrun & inUse
 
 typedef struct TaskParameter {
 	unsigned char state : 2;
